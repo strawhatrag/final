@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Distributed Whiteboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #f4f6f9;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+    }
+
+    #board {
+      position: fixed;
+      inset: 0;
+      background-color: #ffffff;
+      background-image: linear-gradient(#e5e7eb 1px, transparent 1px),
+        linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+      background-size: 40px 40px;
+      cursor: crosshair;
+    }
+
+    #toolbar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(10px);
+      padding: 10px 18px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+    }
+
+    #toolbar button {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 14px;
+      background: #111827;
+      color: #ffffff;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    #toolbar button:hover {
+      background: #374151;
+    }
+
+    #toolbar input[type="color"] {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    #userLabel {
+      font-size: 13px;
+      color: #111827;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="board"></canvas>
+
+  <div id="toolbar">
+    <span id="userLabel">You: ...</span>
+    <input type="color" id="colorPicker" value="#000000" />
+    <button id="clearMineBtn">Clear Mine</button>
+    <button id="clearAllBtn">Clear All</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const canvas = document.getElementById("board");
+    const ctx = canvas.getContext("2d");
+    const socket = io();
+
+    const colorPicker = document.getElementById("colorPicker");
+    const clearMineBtn = document.getElementById("clearMineBtn");
+    const clearAllBtn = document.getElementById("clearAllBtn");
+    const userLabel = document.getElementById("userLabel");
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    let drawing = false;
+    let color = colorPicker.value;
+    let userId = null;
+
+    // Stable per-tab user ID
+    userId = sessionStorage.getItem("whiteboardUserId");
+    if (!userId) {
+      userId = Math.random().toString(36).substring(2, 7).toUpperCase();
+      sessionStorage.setItem("whiteboardUserId", userId);
+    }
+
+    // Register with server
+    socket.emit("register", { userId });
+
+    socket.on("user-info", (info) => {
+      userLabel.textContent = `You: ${info.userId}`;
+    });
+
+    socket.on("init-board", (strokes) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      strokes.forEach((s) => drawPoint(s.x, s.y, s.color));
+    });
+
+    colorPicker.addEventListener("change", (e) => {
+      color = e.target.value;
+    });
+
+    clearMineBtn.addEventListener("click", () => {
+      socket.emit("clear-mine");
+    });
+
+    clearAllBtn.addEventListener("click", () => {
+      socket.emit("clear-all");
+    });
+
+    // Mouse drawing
+    canvas.addEventListener("mousedown", () => (drawing = true));
+    canvas.addEventListener("mouseup", () => (drawing = false));
+    canvas.addEventListener("mouseleave", () => (drawing = false));
+
+    canvas.addEventListener("mousemove", (e) => {
+      if (!drawing) return;
+      const x = e.clientX;
+      const y = e.clientY;
+      drawPoint(x, y, color);
+      socket.emit("draw", { x, y, color });
+    });
+
+    // Touch drawing (basic)
+    function touchPos(touch) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top
+      };
+    }
+
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      drawing = true;
+    });
+
+    canvas.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      drawing = false;
+    });
+
+    canvas.addEventListener("touchcancel", (e) => {
+      e.preventDefault();
+      drawing = false;
+    });
+
+    canvas.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      if (!drawing) return;
+      const pos = touchPos(e.touches[0]);
+      drawPoint(pos.x, pos.y, color);
+      socket.emit("draw", { x: pos.x, y: pos.y, color });
+    });
+
+    // Events from server
+    socket.on("draw", (data) => {
+      drawPoint(data.x, data.y, data.color);
+    });
+
+    socket.on("clear-all", () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+
+    socket.on("reset-board", (strokes) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      strokes.forEach((s) => drawPoint(s.x, s.y, s.color));
+    });
+
+    function drawPoint(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  </script>
+</body>
+
+</html>
