@@ -112,7 +112,7 @@
       sessionStorage.setItem("whiteboardUserId", userId);
     }
 
-    // Register with server
+    // Register with backend
     socket.emit("register", { userId });
 
     socket.on("user-info", (info) => {
@@ -149,7 +149,7 @@
       socket.emit("draw", { x, y, color });
     });
 
-    // Touch drawing (basic)
+    // Simple touch support
     function touchPos(touch) {
       const rect = canvas.getBoundingClientRect();
       return {
